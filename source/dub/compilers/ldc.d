@@ -153,6 +153,10 @@ class LdcCompiler : Compiler {
 	string getTargetFileName(in BuildSettings settings, in BuildPlatform platform)
 	const {
 		assert(settings.targetName.length > 0, "No target name set.");
+
+		auto output = run(platform.compilerBinary, "-version");
+		bool generates_coff = output.byLine.find!(l => l.strip.toLower.startsWith("default target:")).front.canFind("-windows-msvc");
+
 		final switch (settings.targetType) {
 			case TargetType.autodetect: assert(false, "Configurations must have a concrete target type.");
 			case TargetType.none: return null;
@@ -163,9 +167,8 @@ class LdcCompiler : Compiler {
 				else return settings.targetName;
 			case TargetType.library:
 			case TargetType.staticLibrary:
-				/*if (m_generatesCOFF)
-					return settings.targetName ~ ".lib";
-				else*/ return "lib" ~ settings.targetName ~ ".a";
+				if (generates_coff) return settings.targetName ~ ".lib";
+				else return "lib" ~ settings.targetName ~ ".a";
 			case TargetType.dynamicLibrary:
 				if (platform.platform.canFind("windows"))
 					return settings.targetName ~ ".dll";
