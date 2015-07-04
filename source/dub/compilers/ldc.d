@@ -152,10 +152,17 @@ class LdcCompiler : Compiler {
 
 	string getTargetFileName(in BuildSettings settings, in BuildPlatform platform)
 	const {
+		import std.string : splitLines, strip;
+		import std.uni : toLower;
+
 		assert(settings.targetName.length > 0, "No target name set.");
 
-		auto output = run(platform.compilerBinary, "-version");
-		bool generates_coff = output.byLine.find!(l => l.strip.toLower.startsWith("default target:")).front.canFind("-windows-msvc");
+		auto result = executeShell(escapeShellCommand([platform.compilerBinary, "-version"]));
+		enforce (result.status == 0, "Failed to determine linker used by LDC. \""
+			~platform.compilerBinary~" -version\" failed with exit code "
+			~result.status.to!string()~".");
+
+		bool generates_coff = result.output.splitLines.find!(l => l.strip.toLower.startsWith("default target:")).front.canFind("-windows-msvc");
 
 		final switch (settings.targetType) {
 			case TargetType.autodetect: assert(false, "Configurations must have a concrete target type.");
