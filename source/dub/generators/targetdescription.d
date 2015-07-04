@@ -49,7 +49,7 @@ class TargetDescriptionGenerator : ProjectGenerator {
 			foreach (ld; ti.linkDependencies) {
 				auto ltarget = targets[ld];
 				auto ltbs = ltarget.buildSettings;
-				auto targetfil = (Path(ltbs.targetPath) ~ getTargetFileName(ltbs, settings.platform)).toNativeString();
+				auto targetfil = (Path(ltbs.targetPath) ~ settings.compiler.getTargetFileName(ltbs, settings.platform)).toNativeString();
 				d.buildSettings.addLinkerFiles(targetfil);
 			}
 

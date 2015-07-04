@@ -370,7 +370,7 @@ class Package {
 
 	/** Returns a description of the package for use in IDEs or build tools.
 	*/
-	PackageDescription describe(BuildPlatform platform, string config)
+	PackageDescription describe(BuildPlatform platform, Compiler compiler, string config)
 	const {
 		PackageDescription ret;
 		ret.configuration = config;
@@ -391,8 +391,8 @@ class Package {
 		ret.targetType = bs.targetType;
 		ret.targetPath = bs.targetPath;
 		ret.targetName = bs.targetName;
-		if (ret.targetType != TargetType.none)
-			ret.targetFileName = getTargetFileName(bs, platform);
+		if (ret.targetType != TargetType.none && compiler)
+			ret.targetFileName = compiler.getTargetFileName(bs, platform);
 		ret.workingDirectory = bs.workingDirectory;
 		ret.mainSourceFile = bs.mainSourceFile;
 		ret.dflags = bs.dflags;
@@ -438,7 +438,7 @@ class Package {
 	// ditto
 	deprecated void describe(ref Json dst, BuildPlatform platform, string config)
 	{
-		auto res = describe(platform, config);
+		auto res = describe(platform, null, config);
 		foreach (string key, value; res.serializeToJson())
 			dst[key] = value;
 	}

@@ -908,14 +908,14 @@ class DescribeCommand : PackageBuildCommand {
 		auto config = m_buildConfig.length ? m_buildConfig : m_defaultConfig;
 
 		if (m_importPaths) {
-			dub.listImportPaths(m_buildPlatform, config, m_buildType, m_dataNullDelim);
+			dub.listImportPaths(m_buildPlatform, m_compiler, config, m_buildType, m_dataNullDelim);
 		} else if (m_stringImportPaths) {
-			dub.listStringImportPaths(m_buildPlatform, config, m_buildType, m_dataNullDelim);
+			dub.listStringImportPaths(m_buildPlatform, m_compiler, config, m_buildType, m_dataNullDelim);
 		} else if (m_data) {
 			dub.listProjectData(m_buildPlatform, config, m_buildType, m_data,
 				m_dataList? null : m_compiler, m_dataNullDelim);
 		} else {
-			auto desc = dub.project.describe(m_buildPlatform, config, m_buildType);
+			auto desc = dub.project.describe(m_buildPlatform, m_compiler, config, m_buildType);
 			writeln(desc.serializeToPrettyJson());
 		}
 

@@ -245,6 +245,9 @@ interface Compiler {
 	/// Removes any dflags that match one of the BuildOptions values and populates the BuildSettings.options field.
 	void extractBuildOptions(ref BuildSettings settings) const;
 
+	/// Computes the full file name of the generated binary.
+	string getTargetFileName(in BuildSettings settings, in BuildPlatform platform) const;
+
 	/// Adds the appropriate flag to set a target path
 	void setTarget(ref BuildSettings settings, in BuildPlatform platform, string targetPath = null) const;
 
@@ -354,35 +357,6 @@ struct BuildPlatform {
 		assert(!platform.matchesSpecification("-windows-dmd"));
 	}
 }
-
-
-string getTargetFileName(in BuildSettings settings, in BuildPlatform platform)
-{
-	assert(settings.targetName.length > 0, "No target name set.");
-	final switch (settings.targetType) {
-		case TargetType.autodetect: assert(false, "Configurations must have a concrete target type.");
-		case TargetType.none: return null;
-		case TargetType.sourceLibrary: return null;
-		case TargetType.executable:
-			if( platform.platform.canFind("windows") )
-				return settings.targetName ~ ".exe";
-			else return settings.targetName;
-		case TargetType.library:
-		case TargetType.staticLibrary:
-			if (platform.platform.canFind("windows") && platform.compiler == "dmd")
-				return settings.targetName ~ ".lib";
-			else return "lib" ~ settings.targetName ~ ".a";
-		case TargetType.dynamicLibrary:
-			if( platform.platform.canFind("windows") )
-				return settings.targetName ~ ".dll";
-			else return "lib" ~ settings.targetName ~ ".so";
-		case TargetType.object:
-			if (platform.platform.canFind("windows"))
-				return settings.targetName ~ ".obj";
-			else return settings.targetName ~ ".o";
-	}
-}
-
 
 bool isLinkerFile(string f)
 {

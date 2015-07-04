@@ -448,27 +448,27 @@ class Dub {
 	}
 
 	/// Outputs a JSON description of the project, including its dependencies.
-	deprecated void describeProject(BuildPlatform platform, string config)
+	deprecated void describeProject(BuildPlatform platform, Compiler compiler, string config)
 	{
 		import std.stdio;
-		auto desc = m_project.describe(platform, config);
+		auto desc = m_project.describe(platform, compiler, config);
 		writeln(desc.serializeToPrettyJson());
 	}
 
-	void listImportPaths(BuildPlatform platform, string config, string buildType, bool nullDelim)
+	void listImportPaths(BuildPlatform platform, Compiler compiler, string config, string buildType, bool nullDelim)
 	{
 		import std.stdio;
 
-		foreach(path; m_project.listImportPaths(platform, config, buildType, nullDelim)) {
+		foreach(path; m_project.listImportPaths(platform, compiler, config, buildType, nullDelim)) {
 			writeln(path);
 		}
 	}
 
-	void listStringImportPaths(BuildPlatform platform, string config, string buildType, bool nullDelim)
+	void listStringImportPaths(BuildPlatform platform, Compiler compiler, string config, string buildType, bool nullDelim)
 	{
 		import std.stdio;
 
-		foreach(path; m_project.listStringImportPaths(platform, config, buildType, nullDelim)) {
+		foreach(path; m_project.listStringImportPaths(platform, compiler, config, buildType, nullDelim)) {
 			writeln(path);
 		}
 	}

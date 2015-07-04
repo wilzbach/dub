@@ -597,7 +597,7 @@ class Project {
 	}*/
 
 	/// Outputs a build description of the project, including its dependencies.
-	ProjectDescription describe(BuildPlatform platform, string config, string build_type = null)
+	ProjectDescription describe(BuildPlatform platform, Compiler compiler, string config, string build_type = null)
 	{
 		import dub.generators.targetdescription;
 
@@ -612,9 +612,9 @@ class Project {
 
 		// collect high level information about projects (useful for IDE display)
 		auto configs = getPackageConfigs(platform, config);
-		ret.packages ~= m_rootPackage.describe(platform, config);
+		ret.packages ~= m_rootPackage.describe(platform, compiler, config);
 		foreach (dep; m_dependencies)
-			ret.packages ~= dep.describe(platform, configs[dep.name]);
+			ret.packages ~= dep.describe(platform, compiler, configs[dep.name]);
 
 		foreach (p; getTopologicalPackageList(false, null, configs))
 			ret.packages[ret.packages.countUntil!(pp => pp.name == p.name)].active = true;
@@ -642,7 +642,7 @@ class Project {
 	/// ditto
 	deprecated void describe(ref Json dst, BuildPlatform platform, string config)
 	{
-		auto desc = describe(platform, config);
+		auto desc = describe(platform, null, config);
 		foreach (string key, value; desc.serializeToJson())
 			dst[key] = value;
 	}
@@ -915,7 +915,7 @@ class Project {
 	string[] listBuildSettings(BuildPlatform platform, string config, string buildType,
 		string[] requestedData, Compiler formattingCompiler, bool nullDelim)
 	{
-		auto projectDescription = describe(platform, config, buildType);
+		auto projectDescription = describe(platform, formattingCompiler, config, buildType);
 		auto configs = getPackageConfigs(platform, config);
 		PackageDescription packageDescription;
 		foreach (pack; projectDescription.packages) {
@@ -956,16 +956,16 @@ class Project {
 	}
 
 	/// Outputs the import paths for the project, including its dependencies.
-	string[] listImportPaths(BuildPlatform platform, string config, string buildType, bool nullDelim)
+	string[] listImportPaths(BuildPlatform platform, Compiler compiler, string config, string buildType, bool nullDelim)
 	{
-		auto projectDescription = describe(platform, config, buildType);
+		auto projectDescription = describe(platform, compiler, config, buildType);
 		return listBuildSetting!"importPaths"(platform, config, projectDescription, null, nullDelim);
 	}
 
 	/// Outputs the string import paths for the project, including its dependencies.
-	string[] listStringImportPaths(BuildPlatform platform, string config, string buildType, bool nullDelim)
+	string[] listStringImportPaths(BuildPlatform platform, Compiler compiler, string config, string buildType, bool nullDelim)
 	{
-		auto projectDescription = describe(platform, config, buildType);
+		auto projectDescription = describe(platform, compiler, config, buildType);
 		return listBuildSetting!"stringImportPaths"(platform, config, projectDescription, null, nullDelim);
 	}
 
