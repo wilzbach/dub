@@ -33,17 +33,15 @@ struct Dependency {
 	private {
 		// Shortcut to create >=0.0.0
 		enum ANY_IDENT = "*";
-		bool m_inclusiveA = true; // A comparison > (true) or >= (false)
-		Version m_versA;
-		bool m_inclusiveB = true; // B comparison < (true) or <= (false)
-		Version m_versB;
+		Interval!Version m_versionRange;
 		Path m_path;
 		bool m_optional = false;
 	}
 
 	// A Dependency, which matches every valid version.
 	static @property any() { return Dependency(ANY_IDENT); }
-	static @property invalid() { Dependency ret; ret.m_versA = Version.HEAD; ret.m_versB = Version.RELEASE; return ret; }
+	static @property invalid() { return Dependency.init; }
+	static assert(!invalid.valid);
 
 	alias ANY = any;
 	alias INVALID = invalid;
@@ -55,9 +53,7 @@ struct Dependency {
 
 	this(in Version ver)
 	{
-		m_inclusiveA = m_inclusiveB = true;
-		m_versA = ver;
-		m_versB = ver;
+		m_versionRange = Interval!Version(ver, ver, "[]");
 	}
 
 	this(Path path)
@@ -70,28 +66,25 @@ struct Dependency {
 	@property Path path() const { return m_path; }
 	@property bool optional() const { return m_optional; }
 	@property void optional(bool optional) { m_optional = optional; }
-	@property bool isExactVersion() const { return m_versA == m_versB; }
+	@property bool isExactVersion() const { return m_versionRange.singular; }
 
-	@property Version version_() const {
-		enforce(m_versA == m_versB, "Dependency "~versionString~" is no exact version.");
-		return m_versA;
+	@property Version version_()
+	const {
+		enforce(m_versionRange.singular, "Dependency "~versionString~" is no exact version.");
+		return m_versionRange.min;
 	}
 
 	@property string versionString()
 	const {
+		if (m_versionRange.empty) return "invalid";
+		if (m_versionRange.singular) return m_versionRange.min.toString();
+		if (m_versionRange == any.m_versionRange) return "*";
+
 		string r;
-
-		if (this == invalid) return "invalid";
-
-		if (m_versA == m_versB && m_inclusiveA && m_inclusiveB) {
-			// Special "==" case
-			if (m_versA == Version.MASTER ) r = "~master";
-			else r = m_versA.toString();
-		} else {
-			if (m_versA != Version.RELEASE) r = (m_inclusiveA ? ">=" : ">") ~ m_versA.toString();
-			if (m_versB != Version.HEAD) r ~= (r.length==0 ? "" : " ") ~ (m_inclusiveB ? "<=" : "<") ~ m_versB.toString();
-			if (m_versA == Version.RELEASE && m_versB == Version.HEAD) r = ">=0.0.0";
-		}
+		if (m_versionRange.min != Version.RELEASE || !m_versionRange.minInclusive)
+			r = (m_versionRange.minInclusive ? ">=" : ">") ~ m_versionRange.min.toString();
+		if (m_versionRange.max != Version.HEAD || !m_versionRange.maxInclusive)
+			r ~= (r.length==0 ? "" : " ") ~ (m_versionRange.maxInclusive ? "<=" : "<") ~ m_versionRange.max.toString();
 		return r;
 	}
 
@@ -108,51 +101,37 @@ struct Dependency {
 		if (ves.startsWith("~>")) {
 			// Shortcut: "~>x.y.z" variant. Last non-zero number will indicate
 			// the base for this so something like this: ">=x.y.z <x.(y+1).z"
-			m_inclusiveA = true;
-			m_inclusiveB = false;
-			ves = ves[2..$];
-			m_versA = Version(expandVersion(ves));
-			m_versB = Version(bumpVersion(ves));
+			m_versionRange = Interval!Version(Version(expandVersion(ves[2 .. $])), Version(bumpVersion(ves[2 .. $])), "[)");
 		} else if (ves[0] == Version.BRANCH_IDENT) {
-			m_inclusiveA = true;
-			m_inclusiveB = true;
-			m_versA = m_versB = Version(ves);
+			m_versionRange = Interval!Version(Version(ves), Version(ves), "[]");
 		} else if (std.string.indexOf("><=", ves[0]) == -1) {
-			m_inclusiveA = true;
-			m_inclusiveB = true;
-			m_versA = m_versB = Version(ves);
+			m_versionRange = Interval!Version(Version(ves), Version(ves), "[]");
 		} else {
 			auto cmpa = skipComp(ves);
 			size_t idx2 = std.string.indexOf(ves, " ");
 			if (idx2 == -1) {
 				if (cmpa == "<=" || cmpa == "<") {
-					m_versA = Version.RELEASE;
-					m_inclusiveA = true;
-					m_versB = Version(ves);
-					m_inclusiveB = cmpa == "<=";
+					m_versionRange = Interval!Version(Version.RELEASE, Version(ves), cmpa == "<=" ? "[]" : "[)");
 				} else if (cmpa == ">=" || cmpa == ">") {
-					m_versA = Version(ves);
-					m_inclusiveA = cmpa == ">=";
-					m_versB = Version.HEAD;
-					m_inclusiveB = true;
+					m_versionRange = Interval!Version(Version(ves), Version.HEAD, cmpa == ">=" ? "[]" : "(]");
 				} else {
-					// Converts "==" to ">=a&&<=a", which makes merging easier
-					m_versA = m_versB = Version(ves);
-					m_inclusiveA = m_inclusiveB = true;
+					m_versionRange = Interval!Version(Version(ves), Version(ves), "[]");
 				}
 			} else {
 				enforce(cmpa == ">" || cmpa == ">=", "First comparison operator expected to be either > or >=, not "~cmpa);
 				assert(ves[idx2] == ' ');
-				m_versA = Version(ves[0..idx2]);
-				m_inclusiveA = cmpa == ">=";
+				auto vmin = Version(ves[0..idx2]);
+				bool vmininc = cmpa == ">=";
 				string v2 = ves[idx2+1..$];
 				auto cmpb = skipComp(v2);
 				enforce(cmpb == "<" || cmpb == "<=", "Second comparison operator expected to be either < or <=, not "~cmpb);
-				m_versB = Version(v2);
-				m_inclusiveB = cmpb == "<=";
+				auto vmax = Version(v2);
+				bool vmaxinc = cmpb == "<=";
 
-				enforce(!m_versA.isBranch && !m_versB.isBranch, format("Cannot compare branches: %s", ves));
-				enforce(m_versA <= m_versB, "First version must not be greater than the second one.");
+				enforce(!vmin.isBranch && !vmax.isBranch, format("Cannot compare branches: %s", ves));
+				enforce(vmin <= vmax, "First version must not be greater than the second one.");
+
+				m_versionRange = Interval!Version(vmin, vmax, vmininc ? vmaxinc ? "[]" : "[)" : vmaxinc ? "(]" : "()");
 			}
 		}
 	}
@@ -242,17 +221,14 @@ struct Dependency {
 	bool opEquals(in Dependency o)
 	const {
 		// TODO(mdondorff): Check if not comparing the path is correct for all clients.
-		return o.m_inclusiveA == m_inclusiveA && o.m_inclusiveB == m_inclusiveB
-			&& o.m_versA == m_versA && o.m_versB == m_versB
-			&& o.m_optional == m_optional;
+		if (m_optional != o.m_optional) return false;
+		return m_versionRange == o.m_versionRange;
 	}
 
 	int opCmp(in Dependency o)
 	const {
-		if (m_inclusiveA != o.m_inclusiveA) return m_inclusiveA < o.m_inclusiveA ? -1 : 1;
-		if (m_inclusiveB != o.m_inclusiveB) return m_inclusiveB < o.m_inclusiveB ? -1 : 1;
-		if (m_versA != o.m_versA) return m_versA < o.m_versA ? -1 : 1;
-		if (m_versB != o.m_versB) return m_versB < o.m_versB ? -1 : 1;
+		if (m_versionRange != o.m_versionRange)
+			return m_versionRange.opCmp(o.m_versionRange);
 		if (m_optional != o.m_optional) return m_optional ? -1 : 1;
 		return 0;
 	}
@@ -265,27 +241,16 @@ struct Dependency {
 		} catch (Exception) assert(false);
 	}
 
-	bool valid() const {
-		return m_versA <= m_versB && doCmp(m_inclusiveA && m_inclusiveB, m_versA, m_versB);
-	}
+	bool valid() const { return !m_versionRange.empty; }
 
 	bool matches(string vers) const { return matches(Version(vers)); }
 	bool matches(const(Version) v) const { return matches(v); }
 	bool matches(ref const(Version) v) const {
-		if (this == ANY) return true;
+		if (m_versionRange == any.m_versionRange)
+			return true;
 		//logDebug(" try match: %s with: %s", v, this);
-		// Master only matches master
-		if(m_versA.isBranch) {
-			enforce(m_versA == m_versB);
-			return m_versA == v;
-		}
-		if(v.isBranch || m_versA.isBranch)
-			return m_versA == v;
-		if( !doCmp(m_inclusiveA, m_versA, v) )
-			return false;
-		if( !doCmp(m_inclusiveB, v, m_versB) )
-			return false;
-		return true;
+
+		return m_versionRange.contains(v);
 	}
 
 	/// Merges to versions
@@ -293,24 +258,15 @@ struct Dependency {
 	const {
 		if (this == ANY) return o;
 		if (o == ANY) return this;
+
 		if (!this.valid || !o.valid) return INVALID;
-		if (m_versA.isBranch != o.m_versA.isBranch) return INVALID;
-		if (m_versB.isBranch != o.m_versB.isBranch) return INVALID;
-		if (m_versA.isBranch) return m_versA == o.m_versA ? this : INVALID;
 		if (this.path != o.path) return INVALID;
 
-		Version a = m_versA > o.m_versA ? m_versA : o.m_versA;
-		Version b = m_versB < o.m_versB ? m_versB : o.m_versB;
-
-		Dependency d = this;
-		d.m_inclusiveA = !m_inclusiveA && m_versA >= o.m_versA ? false : o.m_inclusiveA;
-		d.m_versA = a;
-		d.m_inclusiveB = !m_inclusiveB && m_versB <= o.m_versB ? false : o.m_inclusiveB;
-		d.m_versB = b;
-		d.m_optional = m_optional && o.m_optional;
-		if (!d.valid) return INVALID;
-
-		return d;
+		Dependency ret;
+		ret.m_path = m_path;
+		ret.m_optional = m_optional && o.m_optional;
+		ret.m_versionRange = m_versionRange & o.m_versionRange;
+		return ret;
 	}
 
 	private static bool isDigit(char ch) { return ch >= '0' && ch <= '9'; }
@@ -326,10 +282,6 @@ struct Dependency {
 			case "<=": goto case; case "<": goto case;
 			case "==": return cmp;
 		}
-	}
-
-	private static bool doCmp(bool inclusive, ref const Version a, ref const Version b) {
-		return inclusive ? a <= b : a < b;
 	}
 }
 
@@ -464,7 +416,20 @@ unittest {
 	assert(b == a.merge(b));
 	assert(b == b.merge(a));
 
-	logDebug("Dependency Unittest sucess.");
+	assert(Dependency.any.toString() == "*");
+	assert(Dependency("==1.0.0").toString() == "1.0.0");
+	assert(Dependency("1.0.0").toString() == "1.0.0");
+	assert(Dependency("~master").toString() == "~master");
+	assert(Dependency("~branch").toString() == "~branch");
+	assert(Dependency("*").toString() == "*");
+	assert(Dependency(">1.0.0").toString() == ">1.0.0");
+	assert(Dependency(">=1.0.0").toString() == ">=1.0.0");
+	assert(Dependency("<=1.0.0").toString() == "<=1.0.0");
+	assert(Dependency("<1.0.0").toString() == "<1.0.0");
+	assert(Dependency(">1.0.0 <2.0.0").toString() == ">1.0.0 <2.0.0");
+	assert(Dependency(">=1.0.0 <2.0.0").toString() == ">=1.0.0 <2.0.0");
+	assert(Dependency(">1.0.0 <=2.0.0").toString() == ">1.0.0 <=2.0.0");
+	assert(Dependency(">=1.0.0 <=2.0.0").toString() == ">=1.0.0 <=2.0.0");
 }
 
 
@@ -482,7 +447,7 @@ struct Version {
 	private {
 		enum MAX_VERS = "99999.0.0";
 		enum UNKNOWN_VERS = "unknown";
-		string m_version;
+		string m_version = "0.0.0";
 	}
 
 	static @property RELEASE() { return Version("0.0.0"); }
@@ -606,4 +571,180 @@ unittest {
 	assertThrown(a == b, "Failed: UNKNOWN == UNKNOWN");
 
 	assert(Version("1.0.0+a") == Version("1.0.0+b"));
+	assert(Version() <= Version());
+}
+
+
+/// Represents a generic mathematical interval
+private struct Interval(T)
+{
+	static assert(Interval.init.empty);
+
+	private {
+		T m_min;
+		T m_max;
+		bool m_minInclusive = false;
+		bool m_maxInclusive = false;
+	}
+
+	this(T min, T max, string bounds = "[)")
+		in {
+			assert(min <= max, format("Minumum must be lower or equal to the maximum value: %s !<= %s", min, max));
+			assert(bounds.length == 2 && "[(".canFind(bounds[0]) && "])".canFind(bounds[1]),
+				"Bounds must be a string composed of round and square brackets.");
+		}
+	body {
+
+		m_min = min;
+		m_max = max;
+		m_minInclusive = bounds[0] == '[';
+		m_maxInclusive = bounds[1] == ']';
+	}
+
+	// BUG: 1 < x < 2 is also empty for integers!!
+	@property bool empty() const {
+		if (m_min > m_max) return true;
+		if (m_min < m_max) return false;
+		return !m_minInclusive || !m_maxInclusive;
+	}
+
+	/// True iff `min` equals `max` and both ends of the interval are inclusive.
+	@property bool singular() const { return m_min == m_max && m_minInclusive && m_maxInclusive; }
+
+	@property inout(T) min() inout { return m_min; }
+	@property inout(T) max() inout { return m_max; }
+	@property bool minInclusive() const { return m_minInclusive; }
+	@property bool maxInclusive() const { return m_maxInclusive; }
+
+	bool contains(T value)
+	const {
+		if (!m_minInclusive && value <= m_min) return false;
+		if (value < m_min) return false;
+
+		if (!m_maxInclusive && value >= m_max) return false;
+		if (value > m_max) return false;
+
+		return true;
+	}
+
+	bool opEquals(Interval other)
+	const {
+		if (m_min == other.m_min && m_max == other.m_max && m_minInclusive == other.m_minInclusive && m_maxInclusive == other.m_maxInclusive)
+			return true;
+		// BUG: integral ranges [1, 10] and (0, 11) are equal in a strict sense!
+		return false;
+	}
+
+	int opCmp(in Interval o)
+	const {
+		if (m_minInclusive != o.m_minInclusive) return m_minInclusive < o.m_minInclusive ? -1 : 1;
+		if (m_maxInclusive != o.m_maxInclusive) return m_maxInclusive < o.m_maxInclusive ? -1 : 1;
+		if (m_min != o.m_min) return m_min < o.m_min ? -1 : 1;
+		if (m_max != o.m_max) return m_max < o.m_max ? -1 : 1;
+		return 0;
+	}
+
+	Interval opBinary(string op)(Interval other) const if (op == "&")
+	{
+		Interval ret;
+
+		if (this.m_min > other.m_min) {
+			ret.m_min = this.m_min;
+			ret.m_minInclusive = this.m_minInclusive;
+		} else if (other.m_min > this.m_min) {
+			ret.m_min = other.m_min;
+			ret.m_minInclusive = other.m_minInclusive;
+		} else {
+			ret.m_min = this.m_min;
+			ret.m_minInclusive = this.m_minInclusive && other.m_minInclusive;
+		}
+
+		if (this.max < other.max) {
+			ret.m_max = this.m_max;
+			ret.m_maxInclusive = this.m_maxInclusive;
+		} else if (other.m_max < this.m_max) {
+			ret.m_max = other.m_max;
+			ret.m_maxInclusive = other.m_maxInclusive;
+		} else {
+			ret.m_max = this.m_max;
+			ret.m_maxInclusive = this.m_maxInclusive && other.m_maxInclusive;
+		}
+
+		return ret;
+	}
+
+	Interval opBinary(string op)(Interval other) const if (op == "|")
+	{
+		Interval ret;
+
+		if (this.m_min < other.m_min) {
+			ret.m_min = this.m_min;
+			ret.m_minInclusive = this.m_minInclusive;
+		} else if (other.m_min < this.m_min) {
+			ret.m_min = other.m_min;
+			ret.m_minInclusive = other.m_minInclusive;
+		} else {
+			ret.m_min = this.m_min;
+			ret.m_minInclusive = this.m_minInclusive || other.m_minInclusive;
+		}
+
+		if (this.max > other.max) {
+			ret.m_max = this.m_max;
+			ret.m_maxInclusive = this.m_maxInclusive;
+		} else if (other.m_max > this.m_max) {
+			ret.m_max = other.m_max;
+			ret.m_maxInclusive = other.m_maxInclusive;
+		} else {
+			ret.m_max = this.m_max;
+			ret.m_maxInclusive = this.m_maxInclusive || other.m_maxInclusive;
+		}
+
+		if (ret.m_min > ret.m_max) return Interval.init;
+
+		return ret;
+	}
+}
+
+unittest {
+	alias Inti = Interval!int;
+
+	assert(!Inti(-1, 1).contains(-2));
+	assert(Inti(-1, 1).contains(-1));
+	assert(Inti(-1, 1).contains(0));
+	assert(!Inti(-1, 1).contains(1));
+	assert(!Inti(-1, 1).contains(2));
+
+	assert(!Inti(-1, 1, "[]").contains(-2));
+	assert(Inti(-1, 1, "[]").contains(-1));
+	assert(Inti(-1, 1, "[]").contains(0));
+	assert(Inti(-1, 1, "[]").contains(1));
+	assert(!Inti(-1, 1, "[]").contains(2));
+
+	assert(!Inti(-1, 1, "()").contains(-2));
+	assert(!Inti(-1, 1, "()").contains(-1));
+	assert(Inti(-1, 1, "()").contains(0));
+	assert(!Inti(-1, 1, "()").contains(1));
+	assert(!Inti(-1, 1, "()").contains(2));
+
+	assert((Inti(1, 10, "[]") | Inti(1, 10, "()")) == Inti(1, 10, "[]"));
+	assert((Inti(1, 10, "[]") & Inti(1, 10, "()")) == Inti(1, 10, "()"));
+	assert((Inti(1, 10, "()") | Inti(1, 10, "[]")) == Inti(1, 10, "[]"));
+	assert((Inti(1, 10, "()") & Inti(1, 10, "[]")) == Inti(1, 10, "()"));
+
+	assert((Inti(1, 10, "[]") | Inti(2, 11, "()")) == Inti(1, 11, "[)"));
+	assert((Inti(1, 10, "[]") & Inti(2, 11, "()")) == Inti(2, 10, "(]"));
+	assert((Inti(2, 11, "()") | Inti(1, 10, "[]")) == Inti(1, 11, "[)"));
+	assert((Inti(2, 11, "()") & Inti(1, 10, "[]")) == Inti(2, 10, "(]"));
+
+	assert(Inti(0, 1) == Inti(0, 1, "[)"));
+	assert(Inti(0, 1) != Inti(0, 1, "[]"));
+	assert(Inti(0, 1) != Inti(0, 1, "()"));
+	assert(Inti(0, 1) != Inti(0, 1, "(]"));
+
+	assert(!Inti(0, 1).empty);
+	assert(Inti(0, 0).empty);
+
+	// failing integer unit tests:
+	//assert(Inti(0, 1, "()").empty);
+	//assert(Inti(0, 1, "[)") == Inti(0, 0, "[]"));
 }
