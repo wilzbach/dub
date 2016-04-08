@@ -251,12 +251,13 @@ class Project {
 				Package p;
 
 				auto basename = getBasePackageName(name);
+				auto subname = getSubPackageName(name);
 				if (name == m_rootPackage.basePackage.name) {
 					vspec = Dependency(m_rootPackage.ver);
 					p = m_rootPackage.basePackage;
 				} else if (basename == m_rootPackage.basePackage.name) {
 					vspec = Dependency(m_rootPackage.ver);
-					try p = m_packageManager.getSubPackage(m_rootPackage.basePackage, getSubPackageName(name), false);
+					try p = m_packageManager.getSubPackage(m_rootPackage.basePackage, subname, false);
 					catch (Exception e) {
 						logDiagnostic("%sError getting sub package %s: %s", indent, name, e.msg);
 						continue;
@@ -268,12 +269,13 @@ class Project {
 						auto path = vspec.path;
 						if (!path.absolute) path = m_rootPackage.path ~ path;
 						p = m_packageManager.getOrLoadPackage(path, PathAndFormat.init, true);
+						if (subname.length) p = m_packageManager.getSubPackage(p, subname, true);
 					}
 				} else if (m_dependencies.canFind!(d => getBasePackageName(d.name) == basename)) {
 					auto idx = m_dependencies.countUntil!(d => getBasePackageName(d.name) == basename);
 					auto bp = m_dependencies[idx].basePackage;
 					vspec = Dependency(bp.path);
-					p = m_packageManager.getSubPackage(bp, getSubPackageName(name), false);
+					p = m_packageManager.getSubPackage(bp, subname, false);
 				} else {
 					logDiagnostic("%sVersion selection for dependency %s (%s) of %s is missing.",
 						indent, basename, name, pack.name);
@@ -288,7 +290,7 @@ class Project {
 						logWarn("%sSub package %s must be referenced using the path to it's parent package.", indent, name);
 						p = p.parentPackage;
 					}
-					if (name.canFind(':')) p = m_packageManager.getSubPackage(p, getSubPackageName(name), false);
+					if (subname.length) p = m_packageManager.getSubPackage(p, subname, false);
 					enforce(p.name == name,
 						format("Path based dependency %s is referenced with a wrong name: %s vs. %s",
 							path.toNativeString(), name, p.name));
