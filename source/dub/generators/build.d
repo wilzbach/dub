@@ -648,11 +648,14 @@ struct Watcher
 			if (!eventfd)
 				eventfd = inotify_init1(IN_NONBLOCK);
 
-			if (inotify_add_watch(eventfd, path.toStringz(), IN_MODIFY) == -1)
+			auto wd = inotify_add_watch(eventfd, path.toStringz(), IN_MODIFY);
+			if (wd == -1)
 			{
 				if (errno == ENOSPC)
 					logError("Not enough inotify watches, try to increase 'fs.inotify.max_user_watches'.");
 				errnoEnforce(false);
+			} else {
+				watches[path] = wd;
 			}
 		} else version (KQUEUE) {
 			if (!eventfd)
@@ -665,7 +668,6 @@ struct Watcher
 				enum O_CLOEXEC = 0x00100000;
 				enum oflags = O_RDONLY | O_CLOEXEC;
 			}
-			// TODO: leaking file descriptor
 			auto fd = open(path.toStringz(), oflags);
 			watches[path] = fd;
 
@@ -759,7 +761,18 @@ struct Watcher
 
 	~this()
 	{
-		import core.sys.posix.unistd;
+		import core.sys.posix.unistd : close;
+
+		version (KQUEUE)
+		{
+			foreach (file; watches.byKey)
+				file.close;
+		}
+		else version (INOTIFY)
+		{
+			foreach (wd; watches)
+				inotify_rm_watch(eventfd, wd);
+		}
 
 		if (eventfd)
 			close(eventfd);
@@ -769,7 +782,7 @@ struct Watcher
 	version (KQUEUE)
 		int[string] watches;
 	else version (INOTIFY)
-		bool[string] watches;
+		int[string] watches;
 }
 
 private NativePath getMainSourceFile(in Package prj)
