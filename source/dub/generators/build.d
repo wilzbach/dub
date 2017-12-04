@@ -636,7 +636,7 @@ struct Watcher
 {
 	import core.stdc.errno;
 	version (linux)
-		import core.sys.linux.sys.inotify, core.sys.posix.fcntl : O_NONBLOCK;
+		import core.sys.linux.sys.inotify;
 	else version (FreeBSD)
 		import core.sys.posix.fcntl, core.sys.freebsd.sys.event;
 	else version (OSX)
@@ -645,10 +645,6 @@ struct Watcher
 	void addFile(string path)
 	{
 		version (INOTIFY) {
-			static if (__VERSION__ < 2067)
-				// value of IN_NONBLOCK in core.sys.linux.sys.inotify is incorrect
-				enum IN_NONBLOCK = O_NONBLOCK;
-
 			if (!eventfd)
 				eventfd = inotify_init1(IN_NONBLOCK);
 
