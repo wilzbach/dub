@@ -36,3 +36,6 @@ __dummy.html
 
 # Ignore coverage files
 cov/
+
+# Ignore auto-generated docs
+/docs
