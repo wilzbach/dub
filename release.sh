@@ -2,7 +2,7 @@
 
 set -v -e -o pipefail
 
-DFLAGS="-release" DMD="ldmd" ./build.sh
+DFLAGS="-release" DMD="$(command -v ldmd2)" ./build.sh
 VERSION=$(git describe --abbrev=0 --tags)
 
 unameOut="$(uname -s)"
