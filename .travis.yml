@@ -56,5 +56,26 @@ addons:
       - libevent-dev
 
 script:
-  - deactivate # deactivate host compiler
   - ./travis-ci.sh
+
+jobs:
+  include:
+    - stage: GitHub Release
+      d: ldc
+      script: echo "Deploying to GitHub releases ..." && ./release.sh
+      deploy:
+        - provider: releases
+          file_glob: true
+          file: bin/dub-*.tar.gz
+          skip_cleanup: true
+          github_token: $GH_REPO_TOKEN
+          on:
+            branch: master
+            tags: true
+        - provider: pages
+          skip_cleanup: true
+          local_dir: docs
+          github_token: $GH_REPO_TOKEN
+          on:
+            branch: master
+            condition: "$DEPLOY = 1"
