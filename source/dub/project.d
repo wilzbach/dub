@@ -329,6 +329,7 @@ class Project {
 
 			foreach (dep; pack.getAllDependencies()) {
 				Dependency vspec = dep.spec;
+				logInfo("DEPENDENCY: %s", dep);
 				Package p;
 
 				auto basename = getBasePackageName(dep.name);
@@ -338,10 +339,14 @@ class Project {
 				// need to be satisfied
 				bool is_desired = !vspec.optional || m_selections.hasSelectedVersion(basename) || (vspec.default_ && m_selections.bare);
 
+				// requires itself as dependency
 				if (dep.name == m_rootPackage.basePackage.name) {
+					logInfo("A1");
 					vspec = Dependency(m_rootPackage.version_);
 					p = m_rootPackage.basePackage;
+				// or the base packages requires itself as dependency
 				} else if (basename == m_rootPackage.basePackage.name) {
+					logInfo("A2");
 					vspec = Dependency(m_rootPackage.version_);
 					try p = m_packageManager.getSubPackage(m_rootPackage.basePackage, subname, false);
 					catch (Exception e) {
@@ -349,8 +354,11 @@ class Project {
 						if (is_desired) m_hasAllDependencies = false;
 						continue;
 					}
+				// is there a dub.selections.json file?
 				} else if (m_selections.hasSelectedVersion(basename)) {
+					logInfo("B (selections: %s), basename: %s", m_selections.serialize(), basename);
 					vspec = m_selections.getSelectedVersion(basename);
+					// TODO: check for url too
 					if (vspec.path.empty) p = m_packageManager.getBestPackage(dep.name, vspec);
 					else {
 						auto path = vspec.path;
@@ -358,7 +366,9 @@ class Project {
 						p = m_packageManager.getOrLoadPackage(path, NativePath.init, true);
 						if (subname.length) p = m_packageManager.getSubPackage(p, subname, true);
 					}
+				// does a dependency depend on this dependency?
 				} else if (m_dependencies.canFind!(d => getBasePackageName(d.name) == basename)) {
+					logInfo("C");
 					auto idx = m_dependencies.countUntil!(d => getBasePackageName(d.name) == basename);
 					auto bp = m_dependencies[idx].basePackage;
 					vspec = Dependency(bp.path);
@@ -369,10 +379,17 @@ class Project {
 						indent, basename, dep.name, pack.name);
 				}
 
-				if (!p && !vspec.path.empty) {
+				if (!p && !vspec.url.empty) {
+					logInfo("Congrats. It's a git package!");
+					// TODO: fetch package here
+					// TODO: require git commit hash
+					//m_packageManager
+					//p = m_packageManager.getOrLoadPackage(path, NativePath.init, true);
+					// TODO: check whether the package has already been cloned
+				} else if (!p && !vspec.path.empty) {
 					NativePath path = vspec.path;
 					if (!path.absolute) path = pack.path ~ path;
-					logDiagnostic("%sAdding local %s in %s", indent, dep.name, path);
+					logInfo("%sAdding local %s in %s", indent, dep.name, path);
 					p = m_packageManager.getOrLoadPackage(path, NativePath.init, true);
 					if (p.parentPackage !is null) {
 						logWarn("%sSub package %s must be referenced using the path to it's parent package.", indent, dep.name);

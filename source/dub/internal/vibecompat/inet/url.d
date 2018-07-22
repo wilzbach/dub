@@ -260,6 +260,20 @@ struct URL {
 		if( m_path != rhs.m_path ) return m_path.opCmp(rhs.m_path);
 		return true;
 	}
+
+	/// Check whether the URL has been set
+	bool empty()
+	{
+		return m_schema.empty && localURI.empty;
+	}
+
+	///
+	unittest
+	{
+		assert(URL().empty);
+		assert(!URL("https://example.net").empty);
+		assert(!URL("file://etc/bar").empty);
+	}
 }
 
 unittest {

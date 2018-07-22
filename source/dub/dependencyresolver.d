@@ -100,7 +100,13 @@ class DependencyResolver(CONFIGS, CONFIG) {
 					pidx = *pi;
 					config = configs[*pi];
 				} else {
-					if (basepack == root_base_pack) config.allConfigs = [root.config];
+					logInfo("RESOLVING: %s (URL: %s)", ch, ch.configs.url);
+					if (!ch.configs.url.empty)
+					{
+						ch.configs.versionSpec = "*";
+						config.allConfigs = [ch.configs];
+					}
+					else if (basepack == root_base_pack) config.allConfigs = [root.config];
 					else config.allConfigs = getAllConfigs(basepack);
 					configs ~= config;
 					package_indices[basepack] = pidx;

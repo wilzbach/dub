@@ -354,6 +354,21 @@ class PackageManager {
 		throw new Exception(format("No override exists for %s %s", package_, version_spec));
 	}
 
+	/**
+	Copies an existing package into a destination path and registers it.
+	*/
+	Package storeLocalPackage(NativePath filePath, string _version, NativePath destination)
+	{
+		// TODO: use std.file
+		import std.process;
+		// overwrite dub.json (this one includes a version field)
+		spawnProcess(["cp", "-r", filePath.toNativeString(), destination.toNativeString()]).wait;
+		auto pack = Package.load(destination, NativePath.init, null, _version);
+		pack.storeInfo();
+		addPackages(m_packages, pack);
+		return pack;
+	}
+
 	/// Extracts the package supplied as a path to it's zip file to the
 	/// destination and sets a version field in the package description.
 	Package storeFetchedPackage(NativePath zip_file_path, Json package_info, NativePath destination)

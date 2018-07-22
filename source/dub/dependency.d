@@ -54,6 +54,7 @@ struct Dependency {
 		bool m_inclusiveB = true; // B comparison < (true) or <= (false)
 		Version m_versB;
 		NativePath m_path;
+		URL m_url;
 		bool m_optional = false;
 		bool m_default = false;
 	}
@@ -93,10 +94,21 @@ struct Dependency {
 		m_path = path;
 	}
 
+	this(URL url)
+	{
+		this(ANY_IDENT);
+		m_url = url;
+	}
+
 	/// If set, overrides any version based dependency selection.
 	@property void path(NativePath value) { m_path = value; }
 	/// ditto
 	@property NativePath path() const { return m_path; }
+
+	/// If set, overrides any version based dependency selection.
+	@property void url(URL value) { m_url = value; }
+	/// ditto
+	@property URL url() const { return m_url; }
 
 	/// Determines if the dependency is required or optional.
 	@property bool optional() const { return m_optional; }
@@ -264,7 +276,9 @@ struct Dependency {
 		() @trusted {
 			if (!path.empty) ret ~= " @"~path.toNativeString();
 		} ();
-
+		() @trusted {
+			if (!url.empty) ret ~= " @"~url.toString();
+		} ();
 		return ret;
 	}
 
@@ -278,12 +292,13 @@ struct Dependency {
 	Json toJson()
 	const @trusted { // NOTE Path and Json is @system in vibe.d 0.7.x and in the compatibility layer
 		Json json;
-		if( path.empty && !optional ){
+		if( path.empty && url.empty && !optional ){
 			json = Json(this.versionSpec);
 		} else {
 			json = Json.emptyObject;
 			json["version"] = this.versionSpec;
 			if (!path.empty) json["path"] = path.toString();
+			if (!url.empty) json["url"] = url.toString();
 			if (optional) json["optional"] = true;
 			if (default_) json["default"] = true;
 		}
@@ -312,6 +327,12 @@ struct Dependency {
 
 				dep = Dependency.any;
 				dep.path = NativePath(verspec["path"].get!string);
+			} else if( auto up = "url" in verspec ) {
+				if (auto pv = "version" in verspec)
+					logDiagnostic("Ignoring version specification (%s) for path based dependency %s", pv.get!string, up.get!string);
+
+				dep = Dependency.any;
+				dep.url = URL(verspec["url"].get!string);
 			} else {
 				enforce("version" in verspec, "No version field specified!");
 				auto ver = verspec["version"].get!string;

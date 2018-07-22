@@ -80,6 +80,7 @@ PackageSupplier[] defaultPackageSuppliers()
 {
 	logDiagnostic("Using dub registry url '%s'", defaultRegistryURL);
 	return [
+		//cast(PackageSupplier) new GitPackageSupplier(),
 		new FallbackPackageSupplier(
 			new RegistryPackageSupplier(URL(defaultRegistryURL)),
 			fallbackRegistryURLs.map!(x => cast(PackageSupplier) new RegistryPackageSupplier(URL(x))).array
@@ -495,6 +496,7 @@ class Dub {
 	*/
 	void upgrade(UpgradeOptions options, string[] packages_to_upgrade = null)
 	{
+		logInfo("UPGRADE: %s", packages_to_upgrade);
 		// clear non-existent version selections
 		if (!(options & UpgradeOptions.upgrade)) {
 			next_pack:
@@ -505,6 +507,8 @@ class Dub {
 					if (!path.absolute) path = this.rootPath ~ path;
 					try if (m_packageManager.getOrLoadPackage(path)) continue;
 					catch (Exception e) { logDebug("Failed to load path based selection: %s", e.toString().sanitize); }
+				} else if (!dep.url.empty) {
+					logInfo("Trying to select URL: %s", dep.url);
 				} else {
 					if (m_packageManager.getPackage(p, dep.version_)) continue;
 					foreach (ps; m_packageSuppliers) {
@@ -528,7 +532,10 @@ class Dub {
 		auto resolver = new DependencyVersionResolver(this, options);
 		foreach (p; packages_to_upgrade)
 			resolver.addPackageToUpgrade(p);
+
+		logInfo("RESOLVER START");
 		versions = resolver.resolve(m_project.rootPackage, m_project.selections);
+		logInfo("RESOLVER END");
 
 		if (options & UpgradeOptions.dryRun) {
 			bool any = false;
@@ -560,6 +567,7 @@ class Dub {
 		foreach (p; versions.byKey) {
 			auto ver = versions[p]; // Workaround for DMD 2.070.0 AA issue (crashes in aaApply2 if iterating by key+value)
 			assert(!p.canFind(":"), "Resolved packages contain a sub package!?: "~p);
+			logInfo("UPGRADING: %s", p);
 			Package pack;
 			if (!ver.path.empty) {
 				try pack = m_packageManager.getOrLoadPackage(ver.path);
@@ -567,6 +575,11 @@ class Dub {
 					logDebug("Failed to load path based selection: %s", e.toString().sanitize);
 					continue;
 				}
+			} else if (!ver.url.empty) {
+				// TODO: clone the git dependency
+				// TODO: save git commit hash in the dub.selections.json
+				logInfo("ver.url dependency");
+				continue;
 			} else {
 				pack = m_packageManager.getBestPackage(p, ver);
 				if (pack && m_packageManager.isManagedPackage(pack)
@@ -856,23 +869,36 @@ class Dub {
 			return m_packageManager.getPackage(packageId, ver, dstpath);
 		}
 
-		// repeat download on corrupted zips, see #1336
-		foreach_reverse (i; 0..3)
-		{
-			import std.zip : ZipException;
+		if (!dep.url.empty) {
+			auto tempDir = getTempFile(packageId);
+			logInfo("tempDir: %s", tempDir);
+			logInfo("Placing to %s... (dstpath: %s)", placement.toNativeString(), dstpath);
+			import std.process;
+			// TODO: do a proper git clone here
+			// TODO: clone into temporary directory
+			spawnProcess(["git", "clone", "--depth", "1", "https://github.com/wilzbach/d-bootstrap", tempDir.toNativeString]).wait;
+			m_packageManager.storeLocalPackage(tempDir, "0.0.0", dstpath);
+			//spawn(["rm", "-rf", defaultPlacementLocation ~ ".git");
+		} else {
 
-			auto path = getTempFile(packageId, ".zip");
-			supplier.fetchPackage(path, packageId, dep, (options & FetchOptions.usePrerelease) != 0); // Q: continue on fail?
-			scope(exit) std.file.remove(path.toNativeString());
-			logDiagnostic("Placing to %s...", placement.toNativeString());
+			// repeat download on corrupted zips, see #1336
+			foreach_reverse (i; 0..3)
+			{
+				import std.zip : ZipException;
 
-			try {
-				return m_packageManager.storeFetchedPackage(path, pinfo, dstpath);
-			} catch (ZipException e) {
-				logInfo("Failed to extract zip archive for %s %s...", packageId, ver);
-				// rethrow the exception at the end of the loop
-				if (i == 0)
-					throw e;
+				auto path = getTempFile(packageId, ".zip");
+				supplier.fetchPackage(path, packageId, dep, (options & FetchOptions.usePrerelease) != 0); // Q: continue on fail?
+				scope(exit) std.file.remove(path.toNativeString());
+				logDiagnostic("Placing to %s...", placement.toNativeString());
+
+				try {
+					return m_packageManager.storeFetchedPackage(path, pinfo, dstpath);
+				} catch (ZipException e) {
+					logInfo("Failed to extract zip archive for %s %s...", packageId, ver);
+					// rethrow the exception at the end of the loop
+					if (i == 0)
+						throw e;
+				}
 			}
 		}
 		assert(0, "Should throw a ZipException instead.");
@@ -1415,7 +1441,9 @@ private class DependencyVersionResolver : DependencyResolver!(Dependency, Depend
 	{
 		m_rootPackage = root;
 		m_selectedVersions = selected_versions;
-		return super.resolve(TreeNode(root.name, Dependency(root.version_)), (m_options & UpgradeOptions.printUpgradesOnly) == 0);
+		logInfo("dub.resolve: %s", root.name);
+		auto dep = Dependency(root.version_);
+		return super.resolve(TreeNode(root.name, dep), (m_options & UpgradeOptions.printUpgradesOnly) == 0);
 	}
 
 	protected bool isFixedPackage(string pack)
@@ -1614,6 +1642,15 @@ private class DependencyVersionResolver : DependencyResolver!(Dependency, Depend
 
 		if (auto ret = m_dub.m_packageManager.getBestPackage(name, dep))
 			return ret;
+
+		if (!dep.url.empty)
+		{
+			logInfo("Returning fake URL package");
+			Json json = Json.emptyObject;
+			json["name"] = name;
+			json["version"] = "1.2.3";
+			return new Package(json);
+		}
 
 		auto key = name ~ ":" ~ dep.version_.toString();
 		if (auto ret = key in m_remotePackages)

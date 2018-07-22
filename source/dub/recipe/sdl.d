@@ -178,6 +178,12 @@ private void parseDependency(Tag t, ref BuildSettingsTemplate bs, string package
 			logDiagnostic("Ignoring version specification (%s) for path based dependency %s", attrs["version"][0].value.get!string, attrs["path"][0].value.get!string);
 		dep.versionSpec = "*";
 		dep.path = NativePath(attrs["path"][0].value.get!string);
+	 } else if ("url" in attrs) {
+		import dub.internal.vibecompat.inet.url : URL;
+		if ("version" in attrs)
+			logDiagnostic("Ignoring version specification (%s) for url based dependency %s", attrs["version"][0].value.get!string, attrs["url"][0].value.get!string);
+		dep.versionSpec = "*";
+		dep.url = URL(attrs["url"][0].value.get!string);
 	} else {
 		enforceSDL("version" in attrs, "Missing version specification.", t);
 		dep.versionSpec = attrs["version"][0].value.get!string;

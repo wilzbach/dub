@@ -10,6 +10,7 @@ source/dub/packagesupplier.d
 source/dub/packagesuppliers/package.d
 source/dub/packagesuppliers/fallback.d
 source/dub/packagesuppliers/filesystem.d
+source/dub/packagesuppliers/git.d
 source/dub/packagesuppliers/packagesupplier.d
 source/dub/packagesuppliers/maven.d
 source/dub/packagesuppliers/registry.d
